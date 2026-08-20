@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demanda de Pasajeros APC-TRX · Transporte Público Regional</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --ink:#141b26;--ink-soft:#3a4658;--line:#d9dee7;--line-soft:#eaeef4;
+    --paper:#f7f8fa;--card:#fff;--apc:#1a936f;--trx:#1f6feb;--oferta:#8e44ad;
+    --mono:ui-monospace,'Cascadia Code',Consolas,monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--ink);background:var(--paper);font-size:14px;line-height:1.5}
+  .wrap{max-width:1400px;margin:0 auto;padding:0 20px}
+  header{border-bottom:2px solid var(--ink);background:var(--card)}
+  .head-in{display:flex;align-items:baseline;justify-content:space-between;
+    padding:16px 20px;max-width:1400px;margin:0 auto;flex-wrap:wrap;gap:10px}
+  .brand{font-weight:700;font-size:19px;letter-spacing:-0.02em}
+  .brand span{color:var(--apc)}
+  .brand small{display:block;font-weight:400;font-size:12px;color:var(--ink-soft);margin-top:2px}
+  .meta{font-family:var(--mono);font-size:11px;color:var(--ink-soft);text-align:right;line-height:1.7}
+  .meta b{color:var(--ink)}
+  .filters{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:500}
+  .filters-in{display:flex;gap:14px;padding:12px 20px;max-width:1400px;margin:0 auto;flex-wrap:wrap;align-items:flex-end}
+  .fld{display:flex;flex-direction:column;gap:3px}
+  .fld label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);font-weight:600}
+  .fld select{font-family:var(--sans);font-size:13px;padding:6px 10px;border:1px solid var(--line);
+    border-radius:6px;background:var(--paper);color:var(--ink);min-width:110px;cursor:pointer}
+  .fld select:focus{outline:2px solid var(--apc);outline-offset:-1px}
+  .nivel-tag{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;color:#fff;align-self:center}
+  .nivel-tag.global{background:var(--oferta)} .nivel-tag.detalle{background:var(--apc)}
+  .grid{display:grid;grid-template-columns:1fr 1.1fr;gap:20px;margin:20px 0}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .panel-h{padding:12px 16px;border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center}
+  .panel-h h2{font-size:14px;font-weight:600}
+  .panel-h .hint{font-size:11px;color:var(--ink-soft)}
+  .panel-b{padding:16px}
+  #map{height:460px;width:100%}
+  .legend{display:flex;gap:12px;padding:10px 16px;font-size:12px;border-top:1px solid var(--line-soft);align-items:center;flex-wrap:wrap}
+  .chart-box{position:relative;height:200px}
+  #box1{height:420px}
+  .note{font-size:12px;color:var(--ink-soft);padding:12px 16px;background:var(--paper);
+    border-radius:8px;margin-bottom:20px;border-left:3px solid var(--apc)}
+  .note.global{border-left-color:var(--oferta)}
+  footer{padding:24px 20px;text-align:center;font-size:11px;color:var(--ink-soft);border-top:1px solid var(--line)}
+  .load{padding:60px;text-align:center;color:var(--ink-soft)}
+  .grad{height:12px;width:110px;border-radius:3px;
+    background:linear-gradient(90deg,#fee5d9,#fcae91,#fb6a4a,#de2d26,#a50f15)}
+  .placeholder{display:flex;align-items:center;justify-content:center;height:420px;
+    color:var(--ink-soft);font-size:13px;text-align:center;padding:20px;flex-direction:column;gap:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-in">
+    <div class="brand">Demanda de Pasajeros · <span id="ciudad">—</span>
+      <small>Perfiles de carga a bordo · APC · TRX — Transporte Público Regional</small></div>
+    <div class="meta" id="meta">cargando…</div>
+  </div>
+</header>
+
+<div class="filters">
+  <div class="filters-in">
+    <div class="fld"><label>Nivel</label>
+      <select id="f-nivel">
+        <option value="global">Ciudad (global)</option>
+        <option value="detalle">Detalle SS</option>
+      </select></div>
+    <div class="fld" id="fld-servicio" style="display:none"><label>Servicio</label><select id="f-servicio"></select></div>
+    <div class="fld" id="fld-sentido" style="display:none"><label>Sentido</label><select id="f-sentido"></select></div>
+    <div class="fld" id="fld-dato" style="display:none"><label>Tipo de dato</label>
+      <select id="f-dato">
+        <option value="ambas">Ambas (comparar)</option>
+        <option value="apc">Solo APC</option>
+        <option value="trx">Solo TRX-APC</option>
+      </select></div>
+    <div class="fld"><label>Tipo de día</label>
+      <select id="f-td"><option value="L">Laboral</option><option value="S">Sábado</option><option value="D">Domingo</option></select></div>
+    <div class="fld"><label>Hora</label><select id="f-hora"></select></div>
+    <span class="nivel-tag global" id="nivel-tag">Ciudad</span>
+  </div>
+</div>
+
+<div class="wrap" id="cuerpo">
+  <div class="note" id="nota"></div>
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-h"><h2 id="map-tit">Mapa</h2><span class="hint" id="map-hint"></span></div>
+      <div id="map"></div>
+      <div class="legend" id="leyenda"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2 id="ch-tit">Perfil de carga por km</h2><span class="hint" id="ch-hint">—</span></div>
+      <div class="panel-b">
+        <div class="chart-box" id="box1"><canvas id="chart"></canvas>
+          <div class="placeholder" id="ch-ph" style="display:none"></div></div>
+        <div class="chart-box" id="box2" style="display:none;margin-top:8px"><canvas id="chart2"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>Demanda de pasajeros APC-TRX · demanda de día típico · <span id="foot-mes"></span></footer>
+
+<script>
+let DATA=null, map=null, capa=null, capaRuta=null, chart=null, chart2=null, hexSel=null;
+const TDNOM={L:'Laboral',S:'Sábado',D:'Domingo'};
+// paleta secuencial rojo claro -> rojo oscuro (5 niveles): oscuro = mas
+const SEQ5=['#fee5d9','#fcae91','#fb6a4a','#de2d26','#a50f15'];
+const NIV5=['muy bajo','bajo','medio','alto','muy alto'];
+let catActivas=[true,true,true,true,true];
+let CC={};
+
+async function init(){
+  try{ const r=await fetch('demanda.json'); DATA=await r.json(); }
+  catch(e){
+    document.getElementById('meta').textContent='No se encontró demanda.json';
+    document.getElementById('cuerpo').innerHTML='<div class="load">Coloca <b>demanda.json</b> junto a este HTML.</div>';
+    return;
+  }
+  DATA.cubo_cols.forEach((c,i)=>CC[c]=i);
+  document.getElementById('ciudad').textContent=cap(DATA.ciudad);
+  document.getElementById('meta').innerHTML='<b>'+Object.keys(DATA.perfiles).length+'</b> perfiles · <b>'+
+    Object.keys(DATA.rutas).length+'</b> servicios<br>mes '+DATA.mes+
+    (DATA.modo_demanda?' · '+DATA.modo_demanda.replace('_',' '):'');
+  document.getElementById('foot-mes').textContent='mes '+DATA.mes;
+  buildFilters();
+  initMap();
+  ['f-nivel','f-servicio','f-sentido','f-dato','f-td','f-hora'].forEach(id=>
+    document.getElementById(id).addEventListener('change',e=>{
+      if(id==='f-nivel')cambiarNivel();
+      if(id==='f-servicio')rebuildDependientes(id);
+      render();
+    }));
+  cambiarNivel();
+  render();
+}
+
+function partesSS(ss){const m=ss.match(/^(.+)_([IR])$/);return m?[m[1],m[2]]:[ss,''];}
+
+function buildFilters(){
+  const perfiles=Object.values(DATA.perfiles);
+  rebuildDependientes('init');
+  const horas=[...new Set(perfiles.map(p=>p.hora))].sort((a,b)=>a-b);
+  fill('f-hora',horas,horas[0],h=>h+':00');
+}
+function rebuildDependientes(origen){
+  let ssList=Object.keys(DATA.rutas);
+  const servicios=[...new Set(ssList.map(ss=>partesSS(ss)[0]))].sort(cmpSS);
+  if(origen==='init')fill('f-servicio',servicios,servicios[0]);
+  const servSel=document.getElementById('f-servicio').value;
+  const sentidos=[...new Set(ssList.filter(ss=>partesSS(ss)[0]===servSel).map(ss=>partesSS(ss)[1]))].sort();
+  fill('f-sentido',sentidos,sentidos[0],s=>s==='I'?'Ida':s==='R'?'Retorno':s);
+}
+
+function cambiarNivel(){
+  const niv=document.getElementById('f-nivel').value;
+  const global=niv==='global';
+  document.getElementById('fld-servicio').style.display=global?'none':'';
+  document.getElementById('fld-sentido').style.display=global?'none':'';
+  document.getElementById('fld-dato').style.display=global?'none':'';
+  document.getElementById('box2').style.display='none';
+  const tag=document.getElementById('nivel-tag');
+  tag.className='nivel-tag '+(global?'global':'detalle');
+  tag.textContent=global?'Ciudad':'Detalle SS';
+}
+
+function ssActual(){
+  return document.getElementById('f-servicio').value+'_'+document.getElementById('f-sentido').value;
+}
+function initMap(){
+  const any=Object.values(DATA.rutas)[0];
+  map=L.map('map',{scrollWheelZoom:false}).setView([any.lat[0],any.lon[0]],12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© OpenStreetMap · CARTO',maxZoom:19}).addTo(map);
+  capaRuta=L.layerGroup().addTo(map);
+  capa=L.layerGroup().addTo(map);
+}
+function hexVerts(lat,lon,rM){
+  const mLat=111132,mLon=111320*Math.cos(lat*Math.PI/180),v=[];
+  for(let i=0;i<6;i++){const a=Math.PI/180*(60*i);
+    v.push([lat+(rM*Math.sin(a))/mLat,lon+(rM*Math.cos(a))/mLon]);}
+  return v;
+}
+
+function render(){
+  const niv=document.getElementById('f-nivel').value;
+  if(niv==='global')renderGlobal();
+  else renderDetalle();
+}
+
+// ---------- NIVEL GLOBAL (ciudad) ----------
+function renderGlobal(){
+  capa.clearLayers(); capaRuta.clearLayers(); hexSel=null;
+  const h=+document.getElementById('f-hora').value;
+  const td=document.getElementById('f-td').value;
+  const gkey=String(h).padStart(2,'0')+'|'+td;
+  const filas=(DATA.cubo_global&&DATA.cubo_global[gkey])||[];
+  document.getElementById('map-tit').textContent='Demanda y oferta por zona';
+  document.getElementById('nota').className='note global';
+  document.getElementById('nota').innerHTML=
+    '<b>Vista ciudad · '+h+':00 · '+TDNOM[td]+'.</b> '+
+    'Color = <b>demanda</b> (subidas de día típico); rojo oscuro = más demanda. '+
+    'Clic en una zona para ver su <b>demanda por servicio</b> y <b>nº de buses por servicio</b>, '+
+    'y decidir cuál fiscalizar.';
+
+  // clasificar por demanda con paleta secuencial
+  const vals=filas.map(f=>f.dem).filter(v=>v>0);
+  const breaks=vals.length>=5?jenks(vals,5):[0,1,2,3,4,Math.max(...vals,1)];
+  const rM=DATA.hex_r_m||124.08;
+  let latSum=0,lonSum=0,nn=0;
+  filas.forEach(f=>{
+    if(f.dem<=0)return;
+    const cl=clase5(f.dem,breaks);
+    if(!catActivas[cl])return;  // nivel filtrado
+    const la=DATA.hex_lat[f.h],lo=DATA.hex_lon[f.h];
+    latSum+=la;lonSum+=lo;nn++;
+    L.polygon(hexVerts(la,lo,rM),{fillColor:SEQ5[cl],color:SEQ5[cl],
+      weight:0.5,fillOpacity:0.72}).addTo(capa)
+      .on('click',()=>mostrarHex(f,gkey));
+  });
+  if(nn)map.setView([latSum/nn,lonSum/nn]);
+  document.getElementById('map-hint').textContent=filas.length+' zonas';
+  renderLeyendaGlobal();
+  mostrarPlaceholderChart('Haz clic en una zona del mapa para ver demanda y buses por servicio.');
+  document.getElementById('box2').style.display='none';
+}
+
+function renderLeyendaGlobal(){
+  const lg=document.getElementById('leyenda');
+  lg.innerHTML='<span style="color:var(--ink-soft);font-size:11px">Demanda (clic para filtrar):</span>'+
+    NIV5.map((c,i)=>'<span class="cat-tog" data-i="'+i+'" style="cursor:pointer;display:flex;'+
+      'align-items:center;gap:4px;opacity:'+(catActivas[i]?'1':'0.3')+'">'+
+      '<i style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+SEQ5[i]+'"></i>'+
+      c+'</span>').join('');
+  lg.querySelectorAll('.cat-tog').forEach(el=>el.onclick=()=>{
+    const i=+el.dataset.i; catActivas[i]=!catActivas[i]; renderGlobal();
+  });
+}
+
+function mostrarHex(f,gkey){
+  // dos graficos: demanda por SS y buses por SS
+  const items=f.ss.map(([si,dem,buses])=>({ss:DATA.ss_global[si],dem,buses:buses||0}));
+  // grafico 1: demanda (ordenado desc por demanda)
+  const porDem=items.slice().sort((a,b)=>b.dem-a.dem);
+  const nom1=porDem.map(p=>p.ss), dem1=porDem.map(p=>p.dem);
+  document.getElementById('ch-tit').textContent='Demanda y buses por servicio en la zona';
+  document.getElementById('ch-hint').textContent=
+    f.nss+' servicios · '+fmt(f.dem)+' subidas · '+fmt(f.buses)+' buses/día';
+  document.getElementById('ch-ph').style.display='none';
+  document.getElementById('chart').style.display='';
+  document.getElementById('box2').style.display='';
+  if(chart)chart.destroy();
+  chart=new Chart(document.getElementById('chart'),{
+    type:'bar',
+    data:{labels:nom1,datasets:[{label:'Demanda (subidas/día)',data:dem1,
+      backgroundColor:nom1.map((_,i)=>i===0?'#a50f15':i<3?'#fb6a4a':'#fcae91'),borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        title:{display:true,text:'Demanda por servicio — el mayor es candidato a fiscalizar',
+          font:{size:11},color:'#6b7688'}},
+      scales:{x:{grid:{color:'#eef1f6'},ticks:{color:'#6b7688',font:{size:10}}},
+        y:{grid:{display:false},ticks:{color:'#141b26',font:{size:10}}}}}});
+  // grafico 2: buses (mismo orden de servicios que demanda, para comparar)
+  const bus1=porDem.map(p=>p.buses);
+  if(chart2)chart2.destroy();
+  chart2=new Chart(document.getElementById('chart2'),{
+    type:'bar',
+    data:{labels:nom1,datasets:[{label:'Buses/día',data:bus1,
+      backgroundColor:'#1f6feb',borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        title:{display:true,text:'Nº de buses por servicio (misma zona)',
+          font:{size:11},color:'#6b7688'}},
+      scales:{x:{grid:{color:'#eef1f6'},ticks:{color:'#6b7688',font:{size:10}}},
+        y:{grid:{display:false},ticks:{color:'#141b26',font:{size:10}}}}}});
+  // resaltar hexagono
+  const rM=DATA.hex_r_m||124.08;
+  const la=DATA.hex_lat[f.h],lo=DATA.hex_lon[f.h];
+  capaRuta.clearLayers();
+  L.polygon(hexVerts(la,lo,rM),{fill:false,color:'#141b26',weight:2.5}).addTo(capaRuta);
+}
+
+// ---------- NIVEL DETALLE (SS) ----------
+function renderDetalle(){
+  capa.clearLayers(); capaRuta.clearLayers();
+  const ss=ssActual();
+  const h=+document.getElementById('f-hora').value;
+  const td=document.getElementById('f-td').value;
+  const dato=document.getElementById('f-dato').value;
+  const key=ss+'|'+String(h).padStart(2,'0')+'|'+td;
+  const p=DATA.perfiles[key];
+  document.getElementById('map-tit').textContent='Carga a bordo · '+ss;
+  document.getElementById('nota').className='note';
+  if(!p){
+    document.getElementById('nota').innerHTML='<b>Sin datos</b> para '+ss+' a las '+h+':00 '+TDNOM[td]+'. Prueba otra combinación.';
+    document.getElementById('map-hint').textContent='';
+    mostrarPlaceholderChart('Sin datos para esta combinación.');
+    return;
+  }
+  document.getElementById('nota').innerHTML='<b>'+ss+' · '+h+':00 · '+TDNOM[td]+'</b> · '+p.n_exp+' expediciones. '+
+    'Perfil de carga a bordo (día típico). '+
+    (dato==='ambas'?'Comparando <b style="color:var(--apc)">APC</b> vs <b style="color:var(--trx)">TRX-APC</b>.':
+     dato==='apc'?'Mostrando <b style="color:var(--apc)">APC puro</b>.':'Mostrando <b style="color:var(--trx)">TRX-APC</b>.');
+  // mapa: hexagonos de carga del SS
+  const hexes=DATA.cubo_carga[key]||[];
+  const rM=DATA.hex_r_m||124.08;
+  const cargas=hexes.map(x=>x[CC.abordo]).filter(v=>v>0);
+  const breaks=cargas.length>=5?jenks(cargas,5):[0,1,2,3,4,Math.max(...cargas,1)];
+  let latSum=0,lonSum=0,nn=0;
+  hexes.forEach(x=>{
+    const ab=x[CC.abordo]; if(ab<=0)return;
+    const hi=x[CC.hex_i],la=DATA.hex_lat[hi],lo=DATA.hex_lon[hi];
+    latSum+=la;lonSum+=lo;nn++;
+    const cl=clase5(ab,breaks);
+    L.polygon(hexVerts(la,lo,rM),{fillColor:SEQ5[cl],color:SEQ5[cl],
+      weight:0.5,fillOpacity:0.55}).addTo(capa)
+      .bindPopup('<b>'+DATA.hex_ids[hi]+'</b><br>Carga a bordo: <b>'+fmt(ab)+'</b> pax<br>'+
+        'Subidas: '+fmt(x[CC.sub])+' · Bajadas: '+fmt(x[CC.baj]));
+  });
+  // trazado con flechas de direccion y etiquetas de km
+  dibujarTrazado(ss);
+  if(nn)map.setView([latSum/nn,lonSum/nn]);
+  document.getElementById('map-hint').textContent=hexes.length+' zonas · '+
+    (DATA.rutas[ss]?DATA.rutas[ss].lat.length+' paradas':'');
+  document.getElementById('leyenda').innerHTML=
+    '<span style="color:var(--ink-soft);font-size:11px">Carga a bordo:</span>'+
+    '<span style="font-size:11px">baja</span>'+
+    '<div class="grad" style="background:linear-gradient(90deg,'+SEQ5.join(',')+')"></div>'+
+    '<span style="font-size:11px">alta</span>'+
+    '<span style="margin-left:auto;font-size:11px;color:var(--ink-soft)">▶ sentido · ● km</span>';
+  document.getElementById('box2').style.display='none';
+  renderPerfil(p,dato);
+}
+
+function dibujarTrazado(ss){
+  const ruta=DATA.rutas[ss]; if(!ruta)return;
+  const pts=ruta.lat.map((la,i)=>[la,ruta.lon[i]]);
+  // linea base
+  L.polyline(pts,{color:'#141b26',weight:2,opacity:0.5}).addTo(capaRuta);
+  // flechas de direccion cada ~5 paradas
+  for(let i=3;i<pts.length;i+=5){
+    const a=pts[i-1],b=pts[i];
+    const ang=Math.atan2(b[0]-a[0],b[1]-a[1])*180/Math.PI;
+    const icon=L.divIcon({className:'',html:'<div style="color:#c0392b;font-size:16px;'+
+      'transform:rotate('+(-ang)+'deg);line-height:1">▶</div>',iconSize:[16,16],iconAnchor:[8,8]});
+    L.marker(b,{icon}).addTo(capaRuta);
+  }
+  // etiquetas de km: circulo pequeño semitransparente con el numero
+  let ultKm=-1;
+  ruta.dist.forEach((d,i)=>{
+    const km=Math.floor(d/1000);
+    if(km>ultKm && km>0){
+      ultKm=km;
+      const icon=L.divIcon({className:'',html:'<div style="background:rgba(20,27,38,0.6);'+
+        'color:#fff;font-size:9px;width:18px;height:18px;border-radius:50%;display:flex;'+
+        'align-items:center;justify-content:center;font-weight:600;border:1px solid rgba(255,255,255,0.5)">'+km+'</div>',
+        iconSize:[18,18],iconAnchor:[9,9]});
+      L.marker([ruta.lat[i],ruta.lon[i]],{icon}).addTo(capaRuta);
+    }
+  });
+  // marcadores inicio/fin
+  L.circleMarker(pts[0],{radius:6,fillColor:'#1a936f',color:'#fff',weight:2,fillOpacity:1})
+    .addTo(capaRuta).bindTooltip('Inicio',{permanent:false});
+  L.circleMarker(pts[pts.length-1],{radius:6,fillColor:'#c0392b',color:'#fff',weight:2,fillOpacity:1})
+    .addTo(capaRuta).bindTooltip('Fin',{permanent:false});
+}
+
+function renderPerfil(p,dato){
+  document.getElementById('ch-tit').textContent='Perfil de carga por km';
+  document.getElementById('ch-ph').style.display='none';
+  document.getElementById('chart').style.display='';
+  const km=p.dist.map(d=>(d/1000).toFixed(1));
+  const ds=[];
+  if(dato==='ambas'||dato==='apc')
+    ds.push({label:'Carga APC',data:p.carga_apc,borderColor:'#1a936f',
+      backgroundColor:'rgba(26,147,111,0.10)',borderWidth:2,fill:dato==='apc',tension:0.35,pointRadius:0});
+  if(dato==='ambas'||dato==='trx')
+    ds.push({label:'Carga TRX-APC',data:p.carga_trx,borderColor:'#1f6feb',
+      backgroundColor:'rgba(31,111,235,0.10)',borderWidth:2,fill:dato==='trx',tension:0.35,pointRadius:0,
+      borderDash:dato==='ambas'?[5,3]:[]});
+  if(chart)chart.destroy();
+  chart=new Chart(document.getElementById('chart'),{
+    type:'line',data:{labels:km,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{boxWidth:14,font:{size:11}}}},
+      scales:{x:{grid:{display:false},ticks:{color:'#6b7688',font:{size:10},maxTicksLimit:12},
+           title:{display:true,text:'km de ruta',color:'#6b7688',font:{size:11}}},
+        y:{grid:{color:'#eef1f6'},ticks:{color:'#6b7688',font:{size:10}},
+           title:{display:true,text:'pasajeros a bordo',color:'#6b7688',font:{size:11}}}}}});
+  const maxA=Math.max(...p.carga_apc),maxT=Math.max(...p.carga_trx);
+  document.getElementById('ch-hint').textContent='máx APC '+fmt(maxA)+' · máx TRX '+fmt(maxT)+' pax';
+}
+
+function mostrarPlaceholderChart(txt){
+  if(chart)chart.destroy();
+  document.getElementById('chart').style.display='none';
+  const ph=document.getElementById('ch-ph');
+  ph.style.display='flex'; ph.innerHTML='<div>'+txt+'</div>';
+  document.getElementById('ch-tit').textContent='—';
+  document.getElementById('ch-hint').textContent='';
+}
+
+function jenks(data,nC){
+  const d=data.slice().sort((a,b)=>a-b),n=d.length;
+  if(n<=nC)return d.slice();
+  const m1=[],m2=[];
+  for(let i=0;i<=n;i++){m1.push(new Array(nC+1).fill(0));m2.push(new Array(nC+1).fill(Infinity));}
+  for(let j=1;j<=nC;j++){m1[1][j]=1;m2[1][j]=0;}
+  for(let l=2;l<=n;l++){let s1=0,s2=0,w=0;
+    for(let mm=1;mm<=l;mm++){const i3=l-mm+1,val=d[i3-1];s2+=val*val;s1+=val;w++;
+      const v=s2-s1*s1/w,i4=i3-1;
+      if(i4)for(let j=2;j<=nC;j++)if(m2[l][j]>=v+m2[i4][j-1]){m1[l][j]=i3;m2[l][j]=v+m2[i4][j-1];}}
+    m1[l][1]=1;}
+  const br=new Array(nC+1);br[nC]=d[n-1];br[0]=d[0];let k=n;
+  for(let j=nC;j>=2;j--){const idx=Math.floor(m1[k][j])-1;br[j-1]=d[idx];k=Math.floor(m1[k][j])-1;}
+  return br;
+}
+function clase5(v,br){for(let i=1;i<br.length;i++)if(v<=br[i])return i-1;return br.length-2;}
+function fill(id,arr,sel,lab){const s=document.getElementById(id);s.innerHTML='';
+  arr.forEach(v=>{const o=document.createElement('option');o.value=v;
+    o.textContent=lab?lab(v):v;if(v===sel)o.selected=true;s.appendChild(o);});}
+function cmpSS(a,b){const na=parseInt(a),nb=parseInt(b);return na!==nb?na-nb:(''+a).localeCompare(b);}
+function cmpU(a,b){const na=parseInt((''+a).replace(/\D/g,''))||0,nb=parseInt((''+b).replace(/\D/g,''))||0;return na-nb;}
+function fmt(n){return Math.round(n||0).toLocaleString('es-CL');}
+function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
+
+init();
+</script>
+</body>
+</html>
